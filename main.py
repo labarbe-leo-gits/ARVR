@@ -26,7 +26,11 @@ cTime = 0
 
 currentStroke = []
 strokes = []
+deletedStroke = []
 drawing = False
+eraser = False
+ERASER_RADIUS = 20
+eraser_point = None
 
 while True:
     rect, frame = cam.read()
@@ -43,6 +47,8 @@ while True:
 
             thumb = None
             index = None
+            ringFinger = None
+            middleFinger = None
 
             for id, lm in enumerate(handLms.landmark):
                 #print(id, lm)
@@ -54,11 +60,15 @@ while True:
                     thumb = (cx, cy)
                 elif id == 8:
                     index = (cx, cy)
+                elif id == 12:
+                    middleFinger = (cx, cy)
+                elif id == 16:
+                    ringFinger = (cx, cy)
 
             if thumb and index:
                 pinch_distance = math.hypot(index[0] - thumb[0], index[1] - thumb[1])
-                if pinch_distance < 20:
-                    cv2.putText(frame, "PINCH", (10, 120), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 0), 2)
+                if pinch_distance < 15:
+                    cv2.putText(frame, "DRAWING", (10, 120), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 0), 2)
                     if not drawing:
                         drawing = True
                         currentStroke = []
@@ -70,8 +80,49 @@ while True:
                             strokes.append(currentStroke)
                             currentStroke = []
 
+            if thumb and middleFinger:
+                for i in results.multi_handedness:
+                    label = MessageToDict(i)['classification'][0]['label']
+                    if label == 'Right':
+                        pinch_distance = math.hypot(middleFinger[0] - thumb[0], middleFinger[1] - thumb[1])
+                        if pinch_distance < 15:
+                            cv2.putText(frame, "ERASER", (10, 120), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 0), 2) 
+                            cv2.circle(frame, middleFinger, 15, (0, 255, 0), 2)
+                            eraser = True
+                            eraser_point = middleFinger
+                        else:
+                            eraser = False
+
+            if thumb and ringFinger:
+                for i in results.multi_handedness:
+                    label = MessageToDict(i)['classification'][0]['label']
+                    if label == 'Left':
+                        pinch_distance = math.hypot(ringFinger[0] - thumb[0], ringFinger[1] - thumb[1])
+                        if pinch_distance < 25:
+                            cv2.putText(frame, "CLEAR", (10, 120), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 0), 2)
+                            strokes.clear()
+
+            if eraser and eraser_point is not None:
+                newStrokes = []
+                for stroke in strokes:
+                    newStroke = []
+                    for point in stroke:
+                        dist = math.hypot(eraser_point[0] - point[0], eraser_point[1] - point[1])
+                    
+                        if dist >= ERASER_RADIUS:
+                            newStroke.append(point)
+                    
+                    if newStroke:
+                        newStrokes.append(newStroke)
+                strokes = newStrokes
+
             if drawing and currentStroke:
                 cv2.polylines(frame, [np.array(currentStroke, dtype=np.int32)], False, (0, 255, 255), 4)
+
+            """ for stroke in deletedStroke:
+                if len(stroke) > 1:
+                    strokes.remove(stroke)
+                    deletedStroke.clear() """
 
             for stroke in strokes:
                 if len(stroke) > 1:
