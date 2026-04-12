@@ -9,6 +9,11 @@ cam = cv2.VideoCapture(0) # 0 = caméra par défaut
 cam.set(3, 200)
 cam.set(4, 200)
 
+fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+width = int(cam.get(3))
+height = int(cam.get(4))
+out = cv2.VideoWriter('AR_Demo.avi', fourcc, 20.0, (width, height))
+
 # Modèle main
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(
@@ -136,10 +141,13 @@ while True:
 
     cv2.putText(frame, str(int(fps)), (10, 70), cv2.FONT_HERSHEY_COMPLEX, 1, (255, 0, 255), 3)
 
+    out.write(frame)
+
     cv2.imshow("Frame", frame)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
+out.release()
 cam.release()
 cv2.destroyAllWindows()
