@@ -19,8 +19,8 @@ mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(
     static_image_mode=False,
     model_complexity=1,
-    min_detection_confidence=0.75,
-    min_tracking_confidence=0.75,
+    min_detection_confidence=0.9,
+    min_tracking_confidence=0.9,
     max_num_hands=2
 )
 
@@ -32,10 +32,14 @@ cTime = 0
 currentStroke = []
 strokes = []
 deletedStroke = []
+strokeColors = []
 drawing = False
 eraser = False
 ERASER_RADIUS = 20
 eraser_point = None
+colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (0, 255, 255), (0, 0, 0), (255, 255, 255)]
+currentColor = 0
+maxColor = len(colors) - 1
 
 while True:
     rect, frame = cam.read()
@@ -54,6 +58,7 @@ while True:
             index = None
             ringFinger = None
             middleFinger = None
+            pinkie = None
 
             for id, lm in enumerate(handLms.landmark):
                 #print(id, lm)
@@ -69,6 +74,8 @@ while True:
                     middleFinger = (cx, cy)
                 elif id == 16:
                     ringFinger = (cx, cy)
+                elif id == 20:
+                    pinkie = (cx, cy)
 
             if thumb and index:
                 pinch_distance = math.hypot(index[0] - thumb[0], index[1] - thumb[1])
@@ -83,6 +90,7 @@ while True:
                         drawing = False
                         if currentStroke:
                             strokes.append(currentStroke)
+                            strokeColors.append(currentColor)
                             currentStroke = []
 
             if thumb and middleFinger:
@@ -107,6 +115,15 @@ while True:
                             cv2.putText(frame, "CLEAR", (10, 120), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 0), 2)
                             strokes.clear()
 
+            if thumb and pinkie and not drawing:
+                pinch_distance = math.hypot(pinkie[0] - thumb[0], pinkie[1] - thumb[1])
+                if pinch_distance < 12:
+                    cv2.putText(frame, "NEXT COLOR", (10, 120), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 0), 2)
+                    if currentColor < maxColor:
+                        currentColor = currentColor + 1
+                    else:
+                        currentColor = 0
+
             if eraser and eraser_point is not None:
                 newStrokes = []
                 for stroke in strokes:
@@ -119,19 +136,21 @@ while True:
                     
                     if newStroke:
                         newStrokes.append(newStroke)
+                        strokeColors.append(currentColor)
                 strokes = newStrokes
 
             if drawing and currentStroke:
-                cv2.polylines(frame, [np.array(currentStroke, dtype=np.int32)], False, (0, 255, 255), 4)
+                cv2.polylines(frame, [np.array(currentStroke, dtype=np.int32)], False, colors[currentColor], 4)
 
             """ for stroke in deletedStroke:
                 if len(stroke) > 1:
                     strokes.remove(stroke)
                     deletedStroke.clear() """
 
-            for stroke in strokes:
+            for idx, stroke in enumerate(strokes):
                 if len(stroke) > 1:
-                    cv2.polylines(frame, [np.array(stroke, dtype=np.int32)], False, (0, 255, 255), 4)
+                    color = colors[strokeColors [idx]]
+                    cv2.polylines(frame, [np.array(stroke, dtype=np.int32)], False, color, 4)
 
             mpDraw.draw_landmarks(frame, handLms, mp_hands.HAND_CONNECTIONS)
     
