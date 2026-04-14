@@ -4,10 +4,16 @@ from google.protobuf.json_format import MessageToDict
 import time
 import math
 import numpy as np
+import screeninfo
+
+primary = next((m for m in screeninfo.get_monitors() if m.is_primary), None)
+
+if primary is None:
+    primary = screeninfo.get_monitors()[0]
 
 cam = cv2.VideoCapture(0) # 0 = caméra par défaut
-cam.set(3, 200)
-cam.set(4, 200)
+cam.set(3, 0.75*(primary.width))
+cam.set(4, 0.75*(primary.height))
 
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 width = int(cam.get(3))
