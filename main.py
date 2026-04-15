@@ -15,10 +15,10 @@ cam = cv2.VideoCapture(0) # 0 = caméra par défaut
 cam.set(3, 0.75*(primary.width))
 cam.set(4, 0.75*(primary.height))
 
-fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-width = int(cam.get(3))
-height = int(cam.get(4))
-out = cv2.VideoWriter('AR_Demo.avi', fourcc, 20.0, (width, height))
+#fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+#width = int(cam.get(3))
+#height = int(cam.get(4))
+#out = cv2.VideoWriter('AR_Demo.avi', fourcc, 20.0, (width, height))
 
 # Modèle main
 mp_hands = mp.solutions.hands
@@ -35,12 +35,26 @@ mpDraw = mp.solutions.drawing_utils
 pTime = 0
 cTime = 0
 
+def dist2D(a, b):
+    return math.hypot(a[0] - b[0], a[1] - b[1])
+
+# Ratios pour distance dynamique
+DRAW_RATIO_THR = 0.45
+ERASER_RATIO_THR = 0.40
+CLEAR_RATIO_THR = 0.45
+NEXT_COLOR_RATIO_THR = 0.30
+ERASER_RADIUS_RATIO = 0.35
+RECORDING_RATIO_THR = 0.20
+
 currentStroke = []
 strokes = []
 deletedStroke = []
 strokeColors = []
 drawing = False
 eraser = False
+recording = False
+out = None
+record_path = None
 ERASER_RADIUS = 20
 eraser_point = None
 colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (0, 255, 255), (0, 0, 0), (255, 255, 255)]
@@ -48,6 +62,34 @@ currentColor = 0
 maxColor = len(colors) - 1
 colorChangeDelay = 2.0 # 2 secondes
 lastColorChangeTime = 0.0
+lastRecordToggleTime = 0.0
+recordToggleDelay = 2.0
+recordStartTime = 0.0
+
+def startRecording(frame):
+    global out, recording, record_path, recordStartTime
+    if recording:
+        return
+    
+    h, w = frame.shape[:2]
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    fps_out = cam.get(cv2.CAP_PROP_FPS)
+    if fps_out <= 1:
+        fps_out = 20.0
+    
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    record_path = f"AR_Demo_{ts}.avi"
+    out = cv2.VideoWriter(record_path, fourcc, fps_out, (w, h))
+    recording = out.isOpened()
+    recordStartTime = time.time()
+
+def stopRecording():
+    global out, recording, recordStartTime
+    if out is not None:
+        out.release()
+        out = None
+    recording = False
+    recordStartTime = 0.0
 
 while True:
 
@@ -93,9 +135,28 @@ while True:
                 elif id == 20:
                     pinkie = (cx, cy)
 
+            lms = handLms.landmark
+            thumb_n = (lms[4].x, lms[4].y)
+            index_n = (lms[8].x, lms[8].y)
+            middle_n = (lms[12].x, lms[12].y)
+            ring_n = (lms[16].x, lms[16].y)
+            pinky_n = (lms[20].x, lms[20].y)
+
+            hand_ref_n = dist2D((lms[5].x, lms[5].y), (lms[17].x, lms[17].y))
+            if hand_ref_n < 1e-6:
+                continue
+
+            h, w = frame.shape[:2]
+            p5 = (int(lms[5].x * w), int(lms[5].y * h))
+            p17 = (int(lms[17].x * w), int(lms[17].y * h))
+
+            hand_ref_px = dist2D(p5, p17)
+            eraser_radius_px = max(10, int(hand_ref_px * ERASER_RADIUS_RATIO))
+
             if label == 'Left' and thumb and index:
-                pinch_distance = math.hypot(index[0] - thumb[0], index[1] - thumb[1])
-                if pinch_distance < 15:
+                #pinch_ratio = math.hypot(index[0] - thumb[0], index[1] - thumb[1])
+                pinch_ratio = dist2D(thumb_n, index_n) / hand_ref_n
+                if pinch_ratio < DRAW_RATIO_THR:
                     cv2.putText(frame, "DRAWING", (10, 120), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 0), 2)
                     if not drawing:
                         drawing = True
@@ -110,23 +171,35 @@ while True:
                             currentStroke = []
 
             if label == 'Right' and thumb and middleFinger:
-                pinch_distance = math.hypot(middleFinger[0] - thumb[0], middleFinger[1] - thumb[1])
-                if pinch_distance < 20:
+                #pinch_ratio = math.hypot(middleFinger[0] - thumb[0], middleFinger[1] - thumb[1])
+                pinch_ratio = dist2D(thumb_n, middle_n) / hand_ref_n
+                if pinch_ratio < ERASER_RATIO_THR:
                     cv2.putText(frame, "ERASER", (10, 120), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 0), 2)
-                    cv2.circle(frame, middleFinger, 15, (0, 255, 0), 2)
+                    cv2.circle(frame, middleFinger, eraser_radius_px, (0, 255, 0), 2)
                     eraser = True
                     eraser_point = middleFinger
 
+            if label == 'Left' and thumb and middleFinger:
+                pinch_ratio = dist2D(thumb_n, middle_n) / hand_ref_n
+                if pinch_ratio < RECORDING_RATIO_THR and (now - lastRecordToggleTime) >= recordToggleDelay:
+                    if recording:
+                        stopRecording()
+                    else:
+                        startRecording(frame)
+                    lastRecordToggleTime = now
+
             if label == 'Right' and thumb and ringFinger:
-                pinch_distance = math.hypot(ringFinger[0] - thumb[0], ringFinger[1] - thumb[1])
-                if pinch_distance < 25:
+                #pinch_ratio = math.hypot(ringFinger[0] - thumb[0], ringFinger[1] - thumb[1])
+                pinch_ratio = dist2D(thumb_n, ring_n) / hand_ref_n
+                if pinch_ratio < CLEAR_RATIO_THR:
                     cv2.putText(frame, "CLEAR", (10, 120), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 0), 2)
                     strokes.clear()
                     strokeColors.clear()
 
             if label == 'Left' and thumb and pinkie and not drawing:
-                pinch_distance = math.hypot(pinkie[0] - thumb[0], pinkie[1] - thumb[1])
-                if pinch_distance < 12 and (now - lastColorChangeTime) >= colorChangeDelay:
+                #pinch_ratio = math.hypot(pinkie[0] - thumb[0], pinkie[1] - thumb[1])
+                pinch_ratio = dist2D(thumb_n, pinky_n) / hand_ref_n
+                if pinch_ratio < NEXT_COLOR_RATIO_THR and (now - lastColorChangeTime) >= colorChangeDelay:
                     cv2.putText(frame, "NEXT COLOR", (10, 120), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 0), 2)
                     if currentColor < maxColor:
                         currentColor = currentColor + 1
@@ -142,7 +215,7 @@ while True:
                     for point in stroke:
                         dist = math.hypot(eraser_point[0] - point[0], eraser_point[1] - point[1])
                     
-                        if dist >= ERASER_RADIUS:
+                        if dist >= eraser_radius_px:
                             newStroke.append(point)
                     
                     if newStroke:
@@ -185,6 +258,12 @@ while True:
 
     cv2.putText(frame, countdownText, (100, 70), cv2.FONT_HERSHEY_COMPLEX, 0.8, countdownColor, 2)
 
+    if recording and out is not None:
+        out.write(frame)
+        if recordStartTime > 0:
+            elapsed = now - recordStartTime
+            cv2.putText(frame, f"REC {int(elapsed)}s", (10, 160), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 0, 255), 2)
+
     #out.write(frame)
 
     cv2.imshow("Frame", frame)
@@ -192,6 +271,7 @@ while True:
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-out.release()
+if out is not None:
+    out.release()
 cam.release()
 cv2.destroyAllWindows()
