@@ -5,6 +5,37 @@ import time
 import math
 import numpy as np
 import screeninfo
+import tkinter as tk
+
+DOMINANT = 'Left'
+SECONDARY = 'Right'
+
+def launcherMapper():
+    global DOMINANT, SECONDARY
+    root = tk.Tk()
+    root.title("Hand Selector")
+    root.resizable(False, False)
+
+    tk.Label(root, text="Are you Left or Right handed ?").pack(pady=10)
+
+    def setLeft():
+        global DOMINANT, SECONDARY
+        DOMINANT = 'Left'
+        SECONDARY = 'Right'
+        root.destroy()
+
+    def setRight():
+        global DOMINANT, SECONDARY
+        DOMINANT = 'Right'
+        SECONDARY = 'Left'
+        root.destroy()
+
+    tk.Button(root, text="Left-Handed", command=setLeft).pack(side='left', padx=20, pady=10)
+    tk.Button(root, text="Right-Handed", command=setRight).pack(side='right', padx=20, pady=10)
+    
+    root.mainloop()
+
+launcherMapper()
 
 primary = next((m for m in screeninfo.get_monitors() if m.is_primary), None)
 
@@ -153,7 +184,7 @@ while True:
             hand_ref_px = dist2D(p5, p17)
             eraser_radius_px = max(10, int(hand_ref_px * ERASER_RADIUS_RATIO))
 
-            if label == 'Left' and thumb and index:
+            if label == DOMINANT and thumb and index:
                 #pinch_ratio = math.hypot(index[0] - thumb[0], index[1] - thumb[1])
                 pinch_ratio = dist2D(thumb_n, index_n) / hand_ref_n
                 if pinch_ratio < DRAW_RATIO_THR:
@@ -170,7 +201,7 @@ while True:
                             strokeColors.append(currentColor)
                             currentStroke = []
 
-            if label == 'Right' and thumb and middleFinger:
+            if label == SECONDARY and thumb and middleFinger:
                 #pinch_ratio = math.hypot(middleFinger[0] - thumb[0], middleFinger[1] - thumb[1])
                 pinch_ratio = dist2D(thumb_n, middle_n) / hand_ref_n
                 if pinch_ratio < ERASER_RATIO_THR:
@@ -179,7 +210,7 @@ while True:
                     eraser = True
                     eraser_point = middleFinger
 
-            if label == 'Left' and thumb and middleFinger:
+            if label == DOMINANT and thumb and middleFinger:
                 pinch_ratio = dist2D(thumb_n, middle_n) / hand_ref_n
                 if pinch_ratio < RECORDING_RATIO_THR and (now - lastRecordToggleTime) >= recordToggleDelay:
                     if recording:
@@ -188,7 +219,7 @@ while True:
                         startRecording(frame)
                     lastRecordToggleTime = now
 
-            if label == 'Right' and thumb and ringFinger:
+            if label ==SECONDARY and thumb and ringFinger:
                 #pinch_ratio = math.hypot(ringFinger[0] - thumb[0], ringFinger[1] - thumb[1])
                 pinch_ratio = dist2D(thumb_n, ring_n) / hand_ref_n
                 if pinch_ratio < CLEAR_RATIO_THR:
@@ -196,7 +227,7 @@ while True:
                     strokes.clear()
                     strokeColors.clear()
 
-            if label == 'Left' and thumb and pinkie and not drawing:
+            if label == DOMINANT and thumb and pinkie and not drawing:
                 #pinch_ratio = math.hypot(pinkie[0] - thumb[0], pinkie[1] - thumb[1])
                 pinch_ratio = dist2D(thumb_n, pinky_n) / hand_ref_n
                 if pinch_ratio < NEXT_COLOR_RATIO_THR and (now - lastColorChangeTime) >= colorChangeDelay:
@@ -268,8 +299,17 @@ while True:
 
     cv2.imshow("Frame", frame)
 
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    key = cv2.waitKey(1) & 0xFF
+    if key == ord('q'):
         break
+    if key == ord('s'):
+        if drawing:
+            drawing = False
+            if currentStroke:
+                strokes.append(currentStroke)
+                strokeColors.append(currentColor)
+                currentStroke = []
+        DOMINANT, SECONDARY = SECONDARY, DOMINANT
 
 if out is not None:
     out.release()
